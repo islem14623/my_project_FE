@@ -22,7 +22,7 @@ print("FINAL PFE - PSO FEATURE SELECTION + CNN (Balanced)")
 print("="*90)
 
 # 1. Load Data
-X, y, class_names = load_data(sample_size=100000)
+X, y, class_names = load_data(sample_size=None)
 
 # 2. PSO Feature Selection
 print("\nRunning PSO Feature Selection...")

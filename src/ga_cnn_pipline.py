@@ -25,7 +25,7 @@ print("="*90)
 
 # 1. Load Dataset
 print("\n[1] Loading dataset...")
-X, y, class_names = load_data(sample_size=100000)
+X, y, class_names = load_data(sample_size=None)
 
 print(f"Total features: {X.shape[1]}")
 

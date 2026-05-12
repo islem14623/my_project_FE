@@ -28,7 +28,7 @@ print("="*100)
 print("\n[1] Loading dataset...")
 # For final submission: Use None (full dataset) or a large number like 500000 or 1000000
 #X, y, class_names = load_data(sample_size=None)        # ← Change to None for FULL dataset
-X, y, class_names = load_data(sample_size=500000)   # Use this during testing
+X, y, class_names = load_data(sample_size=None)   # Use this during testing
 
 print(f"Dataset shape: {X.shape}")
 print(f"Total features before selection: {X.shape[1]}")
