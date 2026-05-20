@@ -1,4 +1,4 @@
-![CI Pipeline](https://github.com/islem14623/my_first_app/actions/workflows/ci.yml/badge.svg)
+![CI Pipeline](https://github.com/islem14623/my_project_FE/actions/workflows/ci.yml/badge.svg)
 
 # IIoT Intrusion Detection System with Nature-Inspired Feature Selection
 
