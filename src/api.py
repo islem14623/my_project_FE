@@ -4,9 +4,9 @@ import os
 
 # Only load model/scaler if files exist (for production)
 # During CI/CD tests, these files won't exist
-MODEL_PATH = "final_pso_cnn_balanced_model.keras"
-SCALER_PATH = "pso_scaler.pkl"
-FEATURES_PATH = "pso_selected_features.pkl"
+MODEL_PATH = "models/final_pso_cnn_model.keras"
+SCALER_PATH = "models/pso_scaler.pkl"
+FEATURES_PATH = "models/pso_selected_features.pkl"
 
 # Check if we're in production (model files exist) or testing
 PRODUCTION_MODE = os.path.exists(MODEL_PATH)

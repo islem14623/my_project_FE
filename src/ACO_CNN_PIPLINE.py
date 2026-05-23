@@ -1,140 +1,269 @@
-# FINAL_PFE_ACO_CNN_FULL_DATASET.py
 """
-FINAL PFE SUBMISSION VERSION
-Ant Colony Optimization (ACO) + CNN
-Using FULL or Very Large Dataset
+ACO + CNN Pipeline - Final PFE Version
+Complete pipeline with NO data leakage
+Author: Islem Chenafi
+University: Université Ferhat Abbas Sétif-1
 """
 
 import numpy as np
 import pandas as pd
+import joblib
+import json
+import time
+import warnings
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-# Import your ACO module
-from aco_feature_selection import aco_feature_selection, load_data
+# Import ACO functions
+from aco_feature_selection import load_data, aco_feature_selection
 
-print("="*100)
-print("FINAL PFE SUBMISSION - ACO Feature Selection + CNN")
-print("Using FULL Dataset (or large sample for practical training)")
-print("="*100)
+warnings.filterwarnings('ignore')
 
-# ============================
-# 1. Load Dataset - FULL or Large Sample
-# ============================
-print("\n[1] Loading dataset...")
-# For final submission: Use None (full dataset) or a large number like 500000 or 1000000
-#X, y, class_names = load_data(sample_size=None)        # ← Change to None for FULL dataset
-X, y, class_names = load_data(sample_size=None)   # Use this during testing
+# Set seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
 
-print(f"Dataset shape: {X.shape}")
-print(f"Total features before selection: {X.shape[1]}")
-print(f"Classes: {class_names}")
 
-# ============================
-# 2. ACO Feature Selection
-# ============================
-print("\n[2] Running ACO Feature Selection...")
-selected_features, _ = aco_feature_selection(X, y, n_ants=20, iterations=10)
-selected_features = selected_features.astype(int)
-print(f"ACO successfully selected {len(selected_features)} features")
-print(f"Selected feature indices: {selected_features.tolist()}")
-
-# ============================
-# 3. Prepare Data with Selected Features
-# ============================
-print("\n[3] Preparing data with ACO-selected features...")
-X_selected = X.iloc[:, selected_features].values
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X_selected, y, test_size=0.2, random_state=42, stratify=y
-)
-
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test  = scaler.transform(X_test)
-
-# Reshape for CNN (samples, features, 1)
-X_train_cnn = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-X_test_cnn  = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-
-print(f"Training shape for CNN: {X_train_cnn.shape}")
-print(f"Test shape for CNN: {X_test_cnn.shape}")
-
-# ============================
-# 4. Build CNN Model
-# ============================
-print("\n[4] Building CNN Model...")
-
-model = keras.Sequential([
-    keras.layers.Conv1D(64, kernel_size=3, activation='relu', padding='same',
-                        input_shape=(X_train_cnn.shape[1], 1)),
-    keras.layers.BatchNormalization(),
-    keras.layers.MaxPooling1D(pool_size=2),
+def build_cnn_model(n_features, learning_rate=0.001):
+    """Build CNN model for binary classification"""
+    model = keras.Sequential([
+        keras.layers.Conv1D(64, 3, activation='relu', padding='same',
+                           input_shape=(n_features, 1)),
+        keras.layers.BatchNormalization(),
+        keras.layers.MaxPooling1D(2),
+        keras.layers.Dropout(0.3),
+        
+        keras.layers.Conv1D(128, 3, activation='relu', padding='same'),
+        keras.layers.BatchNormalization(),
+        keras.layers.MaxPooling1D(2),
+        keras.layers.Dropout(0.3),
+        
+        keras.layers.Flatten(),
+        keras.layers.Dense(128, activation='relu'),
+        keras.layers.Dropout(0.4),
+        keras.layers.Dense(64, activation='relu'),
+        keras.layers.Dropout(0.3),
+        keras.layers.Dense(1, activation='sigmoid')
+    ])
     
-    keras.layers.Conv1D(128, kernel_size=3, activation='relu', padding='same'),
-    keras.layers.BatchNormalization(),
-    keras.layers.MaxPooling1D(pool_size=2),
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
     
-    keras.layers.Flatten(),
-    keras.layers.Dense(128, activation='relu'),
-    keras.layers.Dropout(0.4),
-    keras.layers.Dense(64, activation='relu'),
-    keras.layers.Dropout(0.3),
-    keras.layers.Dense(1, activation='sigmoid')
-])
+    return model
 
-model.compile(
-    optimizer='adam',
-    loss='binary_crossentropy',
-    metrics=['accuracy']
-)
 
-class_weight = {0: 1.0, 1: 3.5}   # Slightly higher weight for Attack class
+def main():
+    pipeline_start = time.time()
+    
+    print("="*90)
+    print("FINAL PFE PIPELINE: ACO FEATURE SELECTION + CNN")
+    print("="*90)
+    print("Student: Islem Chenafi")
+    print("Topic: Feature Selection for IIoT Intrusion Detection")
+    print("="*90)
+    
+    # ========================================
+    # STEP 1: Load Data
+    # ========================================
+    print("\n[STEP 1] Loading dataset...")
+    X, y, feature_names, class_names = load_data(sample_size=None)
+    
+    # ========================================
+    # STEP 2: Split data FIRST
+    # ========================================
+    print("\n[STEP 2] Splitting data (before any preprocessing)...")
+    
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=0.25, random_state=42, stratify=y_temp
+    )
+    
+    print(f"✓ Train set      : {X_train.shape[0]} samples ({X_train.shape[0]/len(X)*100:.1f}%)")
+    print(f"✓ Validation set : {X_val.shape[0]} samples ({X_val.shape[0]/len(X)*100:.1f}%)")
+    print(f"✓ Test set       : {X_test.shape[0]} samples ({X_test.shape[0]/len(X)*100:.1f}%)")
+    
+    # ========================================
+    # STEP 3: Scale AFTER splitting
+    # ========================================
+    print("\n[STEP 3] Scaling features (fit on train only)...")
+    
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    
+    print(f"✓ Scaler fit on {X_train_scaled.shape[0]} training samples")
+    print(f"✓ Test set NEVER seen by scaler (no data leakage!)")
+    
+    # ========================================
+    # STEP 4: ACO Feature Selection
+    # ========================================
+    print("\n[STEP 4] Running ACO for feature selection...")
+    
+    selected_indices, best_aco_score = aco_feature_selection(
+        X_train_scaled, y_train,
+        X_val_scaled, y_val,
+        n_ants=20,
+        n_iterations=10,
+        n_features_select=20
+    )
+    
+    selected_indices = np.sort(selected_indices)
+    
+    # Apply feature selection
+    X_train_selected = X_train_scaled[:, selected_indices]
+    X_val_selected = X_val_scaled[:, selected_indices]
+    X_test_selected = X_test_scaled[:, selected_indices]
+    
+    print(f"\n✓ Selected {len(selected_indices)} features out of {X_train_scaled.shape[1]}")
+    
+    # ========================================
+    # STEP 5: Reshape for CNN
+    # ========================================
+    print("\n[STEP 5] Preparing data for CNN...")
+    
+    X_train_cnn = X_train_selected.reshape(X_train_selected.shape[0], X_train_selected.shape[1], 1)
+    X_val_cnn = X_val_selected.reshape(X_val_selected.shape[0], X_val_selected.shape[1], 1)
+    X_test_cnn = X_test_selected.reshape(X_test_selected.shape[0], X_test_selected.shape[1], 1)
+    
+    print(f"✓ CNN input shape: {X_train_cnn.shape}")
+    
+    # ========================================
+    # STEP 6: Build CNN
+    # ========================================
+    print("\n[STEP 6] Building CNN model...")
+    model = build_cnn_model(n_features=len(selected_indices))
+    print(model.summary())
+    
+    # Callbacks
+    early_stop = EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        restore_best_weights=True,
+        verbose=1
+    )
+    
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=0.00001,
+        verbose=1
+    )
+    
+    class_weight = {0: 1.0, 1: 2.5}
+    
+    # ========================================
+    # STEP 7: Train CNN
+    # ========================================
+    print("\n[STEP 7] Training CNN...")
+    print(f"Class weights: {class_weight}")
+    
+    history = model.fit(
+        X_train_cnn, y_train,
+        validation_data=(X_val_cnn, y_val),
+        epochs=30,
+        batch_size=128,
+        class_weight=class_weight,
+        callbacks=[early_stop, reduce_lr],
+        verbose=1
+    )
+    
+    # ========================================
+    # STEP 8: Final Evaluation
+    # ========================================
+    print("\n" + "="*90)
+    print("FINAL RESULTS - TEST SET (NEVER SEEN BEFORE)")
+    print("="*90)
+    
+    y_pred_prob = model.predict(X_test_cnn, verbose=0)
+    y_pred = (y_pred_prob > 0.5).astype(int).flatten()
+    
+    test_accuracy = accuracy_score(y_test, y_pred)
+    
+    print(f"\nTest Accuracy: {test_accuracy*100:.2f}%")
+    print(f"Features Selected by ACO: {len(selected_indices)} / {len(feature_names)}")
+    
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=class_names, digits=4))
+    
+    cm = confusion_matrix(y_test, y_pred)
+    print("\nConfusion Matrix:")
+    print(cm)
+    print(f"\nTrue Negatives (Normal correctly identified) : {cm[0,0]}")
+    print(f"False Positives (Normal wrongly as Attack)   : {cm[0,1]}")
+    print(f"False Negatives (Attack wrongly as Normal)   : {cm[1,0]}")
+    print(f"True Positives (Attack correctly identified) : {cm[1,1]}")
+    
+    attack_recall = cm[1,1] / (cm[1,0] + cm[1,1])
+    attack_precision = cm[1,1] / (cm[0,1] + cm[1,1])
+    attack_f1 = 2 * (attack_precision * attack_recall) / (attack_precision + attack_recall)
+    
+    print(f"\nAttack Detection Metrics:")
+    print(f"  Recall (Detection Rate)    : {attack_recall:.4f}")
+    print(f"  Precision                  : {attack_precision:.4f}")
+    print(f"  F1-Score                   : {attack_f1:.4f}")
+    
+    # ========================================
+    # STEP 9: Save Everything
+    # ========================================
+    print("\n[STEP 9] Saving model and artifacts...")
+    
+    model.save("final_aco_cnn_model.keras")
+    joblib.dump(scaler, "aco_scaler.pkl")
+    joblib.dump(selected_indices, "aco_selected_features.pkl")
+    
+    selected_feature_names = [feature_names[i] for i in selected_indices]
+    with open("aco_selected_feature_names.txt", "w") as f:
+        for name in selected_feature_names:
+            f.write(f"{name}\n")
+    
+    # Save metrics
+    final_metrics = {
+        "algorithm": "ACO + CNN",
+        "test_accuracy": float(test_accuracy),
+        "attack_recall": float(attack_recall),
+        "attack_precision": float(attack_precision),
+        "attack_f1": float(attack_f1),
+        "features_selected": int(len(selected_indices)),
+        "total_features": int(len(feature_names)),
+        "feature_reduction_percent": float(100 - (len(selected_indices)/len(feature_names)*100)),
+        "model_params": int(model.count_params()),
+        "training_time_seconds": float(time.time() - pipeline_start),
+        "confusion_matrix": cm.tolist(),
+        "selected_feature_indices": selected_indices.tolist(),
+    }
+    
+    with open("aco_final_metrics.json", "w") as f:
+        json.dump(final_metrics, f, indent=2)
+    
+    print("✓ Model saved as 'final_aco_cnn_model.keras'")
+    print("✓ Scaler saved as 'aco_scaler.pkl'")
+    print("✓ Selected features saved as 'aco_selected_features.pkl'")
+    print("✓ Feature names saved as 'aco_selected_feature_names.txt'")
+    print("✓ Metrics saved as 'aco_final_metrics.json'")
+    
+    # ========================================
+    # Summary
+    # ========================================
+    print("\n" + "="*90)
+    print("PIPELINE COMPLETED SUCCESSFULLY")
+    print("="*90)
+    print(f"Final Test Accuracy : {test_accuracy*100:.2f}%")
+    print(f"Features Reduced    : {len(feature_names)} → {len(selected_indices)} ({len(selected_indices)/len(feature_names)*100:.1f}% retained)")
+    print(f"Model Parameters    : {model.count_params():,}")
+    print(f"Total Time          : {(time.time()-pipeline_start)/60:.1f} minutes")
+    print("="*90)
 
-callbacks = [
-    EarlyStopping(monitor='val_loss', patience=8, restore_best_weights=True, verbose=1)
-]
 
-# ============================
-# 5. Train the Model
-# ============================
-print("\n[5] Training CNN on selected features...")
-history = model.fit(
-    X_train_cnn, y_train,
-    epochs=30,
-    batch_size=256,                    # Larger batch size for full dataset
-    validation_split=0.2,
-    class_weight=class_weight,
-    callbacks=callbacks,
-    verbose=1
-)
-
-# ============================
-# 6. Final Evaluation
-# ============================
-print("\n" + "="*100)
-print("FINAL RESULTS - ACO + CNN (Full/Large Dataset)")
-print("="*100)
-
-y_pred_prob = model.predict(X_test_cnn, verbose=0)
-y_pred = (y_pred_prob > 0.5).astype(int).flatten()
-
-accuracy = accuracy_score(y_test, y_pred)
-
-print(f"Accuracy                  : {accuracy*100:.2f}%")
-print(f"Features Selected by ACO  : {len(selected_features)} / {X.shape[1]}")
-print(f"Attack Recall             : {classification_report(y_test, y_pred, output_dict=True)['1']['recall']:.4f}")
-
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred, target_names=class_names, digits=4))
-
-print("\nConfusion Matrix:")
-print(confusion_matrix(y_test, y_pred))
-
-# Save model
-model.save("final_aco_cnn_full_dataset.keras")
-print("\nModel saved as 'final_aco_cnn_full_dataset.keras'")
+if __name__ == "__main__":
+    main()
